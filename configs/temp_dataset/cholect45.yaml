@@ -1,0 +1,9 @@
+root: '/pasteur/data/cholect45/CholecT45'
+img_file_template: '{:06d}.png'
+
+num_subjects: 6
+num_verbs: 10
+num_targets: 15
+
+use_sifar: False
+num_segments: 1

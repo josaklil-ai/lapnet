@@ -1,0 +1,23 @@
+root: '/pasteur/data/intermountain/video_dataset'
+img_file_template: 'img_{:09d}.jpg'
+
+num_subjects: 16
+num_verbs: 13
+num_targets: 19
+
+use_sifar: True
+num_segments: 9
+
+temp_augs_enable_center_crop : True 
+temp_augs_enable_multiscale_jitter : True 
+temp_augs_enable_mixup : False
+temp_augs_enable_cutmix : False
+temp_augs_enable_erasing : True 
+temp_augs_enable_augmix : False
+temp_augs_enable_normalize : True
+temp_augs_use_sifar : True
+temp_augs_mixup_lam : 0.8
+temp_augs_cutmix_prob : 1.0
+temp_augs_erasing_prob : 0.25
+temp_augs_augmix_severity : 3
+nrow : 3

@@ -1,0 +1,4 @@
+root: '/pasteur/data/intermountain'
+
+n_channels: 37
+n_classes: 1

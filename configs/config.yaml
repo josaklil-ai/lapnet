@@ -1,0 +1,82 @@
+defaults:
+  - temp_dataset: intermountain
+  - spat_dataset: intermountain
+  - temporal: lapnet_swin
+  - spatial: segformer
+
+  # Filter warnings
+  - override hydra/hydra_logging: disabled  
+  - override hydra/job_logging: disabled  
+
+# Don't save parameters/anything about run. Comment this if we want saving
+hydra:  
+  output_subdir: null  
+  run:  
+    dir: .
+
+# Whether to use a wandb logger
+logging: False
+
+# Set logger
+wandb:
+  _target_: pytorch_lightning.loggers.WandbLogger
+  project: 'lapnet'
+  name: 'test'
+
+# Log confusion matrics
+log_cfms: True
+
+# If not 'both', what branch of the multitask network to train
+branch: 'temporal'
+
+# Datamodule 
+datamodule:
+  _target_: data.datamodule.SurgicalDatamodule
+  temp_img_size: 512
+  spat_img_size: 512
+  use_sifar: True
+  num_segments: 9
+  frames_per_segment: 1
+  temp_batch_size: 4
+  spat_batch_size: 64
+  num_workers: 8
+
+es_callback: 
+  _target_: pytorch_lightning.callbacks.EarlyStopping
+  monitor: 'val/loss'
+  mode: 'min'
+  patience: 10
+
+ckpt_callback: 
+  _target_: pytorch_lightning.callbacks.ModelCheckpoint
+  monitor: 'val_acc_subject'
+  dirpath: 'checkpoints'
+  save_top_k: 1
+  mode: 'max'
+  
+
+# Distributed data parallel for faster data loading
+ddstrat: 
+  _target_: pytorch_lightning.strategies.DDPStrategy
+  find_unused_parameters: False
+
+# Pytorch-Lightning trainer 
+trainer:
+  _target_: pytorch_lightning.Trainer
+  precision: 16
+  devices: -1
+  accelerator: 'gpu'
+  max_epochs: 100
+  enable_model_summary: False
+  check_val_every_n_epoch: 3
+
+# Model checkpoint path to load weights from previous run
+model_path: 'checkpoints/lapnet-epoch=14-val_loss=0.00.ckpt'
+output_dir: ''
+
+# If generating predictions, path of video to visualize
+# e.g. pred_video_path: '/pasteur/data/intermountain/2022-05-13/_.mp4'
+
+# Smoothing prediction parameters
+smooth: True
+window_size: 100

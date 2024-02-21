@@ -1,0 +1,4 @@
+root: '/pasteur/data/cholecseg8k'
+
+n_channels: 3
+n_classes: 14

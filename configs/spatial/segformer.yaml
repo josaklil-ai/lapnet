@@ -1,0 +1,5 @@
+_target_: models.segformer.LapNetSegformer
+
+bilinear: True
+learning_rate: 1e-4
+epsilon: 1e-4
