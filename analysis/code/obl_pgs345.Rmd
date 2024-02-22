@@ -1,0 +1,246 @@
+---
+title: "OBL PGS 3-5 Analysis"
+author: ""
+date: "2024-01-14"
+output: html_document
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(glmnet)
+library(here)
+library(pROC)
+library(PRROC)
+library(selectiveInference)
+
+source(here::here("code/helper.R"))
+
+set.seed(888)
+```
+
+
+### preprocessing
+```{r}
+load(here::here('data/data.Rda'))
+X <- df$X
+Y <- df$Y$OBL
+pgs <- X$pgs
+
+###################
+#    PGS group   #
+###################
+# separate by pgs score (for subgroup analysis)
+# if all 1,2,...,5 then all groups are included
+PGS_GROUP <- c(3,4,5)
+idx_pgs <- which(pgs %in% PGS_GROUP)
+X <- X[idx_pgs,]
+Y <- Y[idx_pgs]
+
+# remove PGS feature
+X <- X[,-which(colnames(X) %in% 'pgs')]
+
+######################################
+# modify needle puncture gallbladder #
+######################################
+# zero out <4 seconds of needle puncture gallbladder
+idx_needle <- which(names(X) == "dur_unique_11.5.12")
+idx_needle_noise <- which(X[, idx_needle] < 4)
+X[idx_needle_noise, idx_needle] <- 0
+X <- X[,-c(98,99,100)]
+
+#######################
+#   Sparsity Filter   #
+#######################
+SPARSITY <- 0.85
+# Remove features that have too many zeros 
+sparsity <- function(x, fraction) {
+  return(which(colMeans(x == 0) > fraction))
+}
+
+index.sparse <- sparsity(X, fraction=SPARSITY)
+X <- X[,-index.sparse]
+X <- data.frame(X)
+
+##################################
+#    Make OBL response binary    #
+##################################
+THRESHOLD_OBL <- 40
+Y <- ifelse(Y > THRESHOLD_OBL, 1, 0)
+
+
+###################
+#   Standardize   #
+###################
+X.scale <- scale(X, center = TRUE, scale = TRUE)
+
+# save mean and sd for unstandardize standardized coefficients
+X.scale.attr <- attributes(X.scale)
+X.mean <- X.scale.attr$`scaled:center`
+X.sd <- X.scale.attr$`scaled:scale`
+
+######################################################
+#    Combine features and target into one matrix    #
+######################################################
+
+# combine X (scaled) and Y for glmnet 
+X.scale <- as.matrix(X.scale)
+XY <- cbind(X.scale, Y)
+colnames(XY)[colnames(XY) == "Y"] <- "target"
+Y <- XY[,colnames(XY) %in% "target"]
+X <- XY[,!(colnames(XY) %in% "target")]
+```
+
+
+### Fit LASSO model
+```{r}
+# train model
+fit.lasso <- cv.glmnet(X,
+                       Y,
+                       alpha=1,
+                       family="binomial",
+                       standardize=FALSE,
+                       keep=TRUE)
+plot(fit.lasso)
+
+# Total number of nonzero coefficients
+nonzero.coef.count <- sum(coef(fit.lasso, s = "lambda.1se")[-1] != 0)
+index.nonzero <- which(coef(fit.lasso, s = "lambda.1se")[-1] != 0)
+index.optim <- which(fit.lasso$lambda == fit.lasso$lambda.1se) 
+yhat_preval <- fit.lasso$fit.preval[,index.optim]
+```
+
+
+### Cross Validation AUROC and AUPRC 
+```{r, message=FALSE}
+roc <- roc.curve(scores.class0 = yhat_preval[Y == 1], scores.class1 = yhat_preval[Y == 0], curve=TRUE)
+pr <- pr.curve(scores.class0 = yhat_preval[Y == 1], scores.class1 = yhat_preval[Y == 0], curve=TRUE)
+roc.curve <- roc$curve
+pr.curve <- pr$curve
+plot_auroc <- round(roc$auc,2)
+plot_auprc <- round(pr$auc.integral,2)
+
+par(mfrow = c(1, 2))
+
+plot(roc.curve[,1], 
+     roc.curve[,2], 
+     col="blue", 
+     type="l",
+     xlab="False Positive Rate",
+     ylab="Sensitivity",
+     main="ROC Curve")
+abline(a=0, b=1, lty="dotted")
+text_roc <- paste0("AUROC=",plot_auroc)
+mtext(text_roc, side=3)
+
+plot(pr.curve[,1],
+     pr.curve[,2],
+     col="blue",
+     type="l",
+     xlab="Recall",
+     ylab="Precision",
+     xlim=c(0,1),
+     ylim=c(0,1),
+     main="Precision-Recall Curve")
+text_pr <- paste0("(AUPRC=",plot_auprc,")")
+mtext(text_pr, side=3)
+```
+
+
+### Map feature name and standardized coefs for ranking
+Standardized coefs sorted by absolute magnitude
+```{r}
+# extract nonzero coefficient values and corresponding feature names
+coefficient_values <- coef(fit.lasso, s = "lambda.1se")
+index.nonzero <- which(coefficient_values[-1] != 0)
+nonzero.feature.name <- attributes(coefficient_values)$Dimnames[[1]][-1]
+nonzero.feature.name <- nonzero.feature.name[index.nonzero]
+nonzero.feature.coef <- coefficient_values[-1][index.nonzero]
+
+# create feature name-coefficient dataframe
+df.features <- data.frame(nonzero.feature.name, nonzero.feature.coef)
+names(df.features) <- c("feature", "coef")
+
+# map id to feature name
+feature_names <- idx_to_name(df.features$feature)
+df.names <- data.frame(cbind(key=df.features$feature, name=feature_names))
+
+# merge and create standardized coef dataframe sorted by absolute magnitude
+df_result <- merge(df.features, df.names, by.x="feature", by.y="key", sort=FALSE)
+names(df_result) <- c("key", "coef", "name")
+df_result_sort_coef <- df_result[order(abs(df_result$coef), decreasing=TRUE),]
+```
+
+
+### Get coefficients back to original scale and compute the odds ratio
+```{r}
+# get intercepts and coefficients from 
+coefs <- coef(fit.lasso, s = "lambda.1se")
+
+# Convert the standardized coefficients back to the original scale
+original_coef <- coefs[-1] / X.sd 
+
+# Adjust the intercept term
+original_intercept <- coefs[1] - sum(original_coef * (X.mean / X.sd))
+oddsRatio <- exp(original_coef[original_coef != 0]) %>% round(4)
+```
+
+
+### Run selective inference
+```{r}
+sds <- X.sd[index.nonzero]
+lambda_1se <- fit.lasso$lambda.1se / nrow(X)
+
+selectInf <- fixedLassoInf(X, Y, 
+                          beta=coefs, 
+                          lambda=lambda_1se, 
+                          family="binomial",
+                          alpha=0.05) 
+```
+
+
+### Create result table
+```{r}
+sds <- X.sd[index.nonzero]
+round_pval <- 2
+round_or <- 5
+round_ci <- 4
+
+# compute odds ratio
+oddsRatio = round(exp(coefs[-1,][index.nonzero]/sds), round_or)
+pval <- round(selectInf$pv, round_pval)
+
+ci_lo <- round(exp(selectInf$ci[,1]/sds), round_ci)
+ci_up <- round(exp(selectInf$ci[,2]/sds), round_ci)
+
+df.results <- data.frame(cbind(feature_name = feature_names,
+                               odds_ratio = oddsRatio,
+                               pvalue = pval,
+                               ci_lo=ci_lo,
+                               ci_up=ci_up))
+
+# remove dur_unique from row name
+row.names(df.results) <- sub("dur_unique.", "", row.names(df.results))
+
+obl.result.or <- df.results[order(abs(as.numeric(df.results$odds_ratio)), decreasing=TRUE),] 
+obl.result.pv <- df.results[order(abs(as.numeric(df.results$pvalue)), decreasing=FALSE),] 
+
+# Result sorted by odds ratio
+obl.result.or
+```
+
+```{r}
+write.csv(obl.result.or, 
+          file=here::here('data/output/result_obl_pgs345.csv'),
+          row.names=FALSE)
+```
+
+```{r}
+
+```
+

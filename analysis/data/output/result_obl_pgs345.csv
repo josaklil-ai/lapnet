@@ -1,0 +1,8 @@
+"feature_name","odds_ratio","pvalue","ci_lo","ci_up"
+"Suction irrigation Suction/Irrigation Cystic pedicle","1.21002","0.04","0.9477","2.0717"
+"Scissors Cut Gallbladder","1.01629","0.72","0.1554","1.3154"
+"Suction irrigation Dissect Cystic pedicle","1.00371","0.04","0.999","1.0151"
+"Suction irrigation Aspirate Blood","1.00162","0.03","0.9999","1.0071"
+"Grasper Retract Liver","1.0006","0.72","0.9512","1.008"
+"L-hook electrocautery Dissect Connective tissue","0.99946","0.34","0.9848","1.0104"
+"Grasper Grasp Connective tissue","0.99464","0.67","0.8488","1.8145"
