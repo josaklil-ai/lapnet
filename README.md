@@ -48,9 +48,9 @@ To get the temporal action segmentation predictions on whole surgical videos `py
 To extract the surgical activity features used in this study, run `python extract_features.py` (make sure to change the file accordingly given your available clinical metadata).
 
 #### Statistical inference
-```
-TO-DO
-```
+The code for all statistical analysis found in the paper is in `analysis/code/` in the form of R markdown files. To view the file with proper code and markdown format, we recommend using RStudio.
+
+The extracted features from the CV model is contained in `analysis/data/data.Rda` which is used throughout the statistical analyses. All output .csv that shows the feature effective size and p-values can be found in `analysis/data/output/`
 
 ### Citation
 ```
